@@ -1,7 +1,6 @@
 package memfs
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -10,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	rifs "github.com/dsoprea/go-utility/filesystem"
 )
 
 // FS is an in-memory filesystem that implements
@@ -180,7 +181,7 @@ func (rootFS *FS) create(path string) (*File, error) {
 	newFile := &File{
 		name:    filePart,
 		perm:    0666,
-		content: &bytes.Buffer{},
+		content: rifs.NewSeekableBuffer(),
 	}
 	dir.children[filePart] = newFile
 
@@ -204,7 +205,7 @@ func (rootFS *FS) WriteFile(path string, data []byte, perm os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	f.content = bytes.NewBuffer(data)
+	f.content = rifs.NewSeekableBufferWithBytes(data)
 	f.perm = perm
 	return nil
 }
@@ -234,7 +235,7 @@ func (rootFS *FS) Open(name string) (fs.File, error) {
 		handle := &File{
 			name:    cc.name,
 			perm:    cc.perm,
-			content: bytes.NewBuffer(cc.content.Bytes()),
+			content: rifs.NewSeekableBufferWithBytes(cc.content.Bytes()),
 		}
 		return handle, nil
 	case *dir:
@@ -333,9 +334,16 @@ func (d *fhDir) ReadDir(n int) ([]fs.DirEntry, error) {
 type File struct {
 	name    string
 	perm    os.FileMode
-	content *bytes.Buffer
+	content *rifs.SeekableBuffer
 	modTime time.Time
 	closed  bool
+}
+
+func (f *File) Seek(offset int64, whence int) (int64, error) {
+	if f.closed {
+		return 0, fs.ErrClosed
+	}
+	return f.content.Seek(offset, whence)
 }
 
 func (f *File) Stat() (fs.FileInfo, error) {
